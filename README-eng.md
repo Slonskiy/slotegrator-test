@@ -6,8 +6,8 @@ b) Next, I uncommented 'WORKDIR /app'. It's possibly an optional step, but stori
 c) I added 'RUN npm install' to the Dockerfile to install our application's dependencies.<br>
 d) Fixed CMD form ('CMD ["node", "index.js"]') to classic (not shell) because we have no ENV vars in CMD statement or something like pipelines, etc. It looks like that's all with the Dockerfile. But if we try to build it, we will encounter a new error. So, going to point 2.<br>
 
-2. package.json
+2. package.json<br>
 a) a) If we try to build (not even in docker, just 'npm install') our application we will encounter an error about 'http^0.0.1 dependency'. I googled a little, and the package named 'http' is not an HTTP server (https://www.npmjs.com/package/http), so I think it's obvious that we need 'http-server' (https://www.npmjs.com/package/http-server) instead of 'http'. As I can see, the latest version of 'http-server' is '14.1.1'. As it's a test task, I will use the latest version available. (Changes are made to the package.json file: "http-server": "^14.1.1").<br>
 Now, the container with our application will be built successfully.<br>
-3. index.js
+3. index.js<br>
 a) Yep, as I checked, it builds successfully. But when I see how it's working in my browser, I see unreadable text. We have Russian text, and obviously, this problem is related to charset. I googled the question 'how to set charset for node http-server' (I'm not too familiar with node, actually) and added 'charset=utf-8' to the 'Content-Type' properties in the res.writeHead method. After rebuilding the application, I see the correct text.<br>
