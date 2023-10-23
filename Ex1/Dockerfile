@@ -1,6 +1,11 @@
-FROM nginx:latest
-RUN apt-get upddate && apt-get install -y nodejs
-# WORKDIR /app
+FROM node:21
+
+WORKDIR /app
+
 COPY package*.json ./
+
+RUN npm install
+
 COPY index.js ./
-CMD "node index.js"
+
+CMD ["node", "index.js"]
