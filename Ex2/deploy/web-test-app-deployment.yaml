@@ -1,0 +1,27 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-test-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-test-app
+  template:
+    metadata:
+      labels:
+        app: web-test-app
+    spec:
+      containers:
+      - name: web-test-app
+        image: web-test-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: web-test-app-pvc
