@@ -83,6 +83,11 @@ In first part of this exercise I choosed to use another base docker image and so
 In second part I added ingress service (separated nginx container), created a docker virtual network, atached both containers to it, and fixed problem with names resolving in the docker virtaul net.
 As last point, I used docker-compose to reduce manual work a little bit.<br>
 I didn't tryied to add certbot image/container or use other ssl certificates, because I have no correct domain name, so result can be not clear. But, of course, it's possible and not too hard.<br>
+P. S. Te correct Dockerfile (and other files used in this task) are in the this repo by follow paths:
+- Ex1/part1/
+- Ex1/part2/
+- Ex1/part2/compose/
+- Ex1/part2/compose/app/
 
  # Exercise 2
 
