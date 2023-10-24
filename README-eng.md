@@ -42,8 +42,8 @@ After that will try to run container with our application and our ingress (I wil
 `sudo docker run -d --rm --name slotegrator --network app-network slotegrator/app`<br>
 `sudo docker run -d --name nginx-ingress --network app-network -p 80:80 -v $(pwd)/nginx.conf:/etc/nginx/nginx.conf:ro nginx:latest`<br>
 All should be good, but not - ingress will fail with 'host not found in upstream "slotegrator"'.<br>
-After some time with google, I understand that nginx in official image trying to solve address using both IP (IPv6 and IPv4) protocols. It's described on stackowerflow and partly [here](https://nginx.org/en/docs/http/ngx_http_core_module.html#resolver). So, I just tryied to add the follow string to the http section of my nging config: 'resolver 127.0.0.11 ipv6=off;'. And it's works.<br>
-Now I can the same result like at first part, but on 80-th port on my localhost.<br>
+After some time with google, I understand that nginx in official image trying to solve address using both IP (IPv6 and IPv4) protocols. It's described on stackowerflow and partly [here](https://nginx.org/en/docs/http/ngx_http_core_module.html#resolver). So, I just tryied to add the follow string to the http section of my nginx config: 'resolver 127.0.0.11 ipv6=off;'. And it's works.<br>
+Now I can see the same result like at first part, but on 80-th port on my localhost.<br>
 b) Docker-compose<br>
 Let's do the same as at previous subpart but with using docker-compose.<br>
 Actually, we need just docker-compose installed and docker-compose.yml.<br>
@@ -74,15 +74,15 @@ networks:
   app-network:
     driver: bridge
 ```
-In this case, I assume that files structure will be like in my repo: Docker file and application source are in app subfolder and correct nginx.conf should be one level higher, near docker-compose.yml.<br>
-As you can see on screen, it's working (but now, as it should be our request going to ingress on 80-th tcp port and after it nginx proxing it to our application):
+In this case, I assume that files structure will be like in my repo: Dockerfile and application source are in app subfolder and correct nginx.conf should be one level higher, near docker-compose.yml.<br>
+As you can see on screenshot, it's working (but now, as it should be our request going to ingress on 80-th tcp port and after it nginx proxing it to our application):
 ![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/23afe334-3db9-41a1-a255-a5058b059984)
 
 Conclusion:<br>
-In first part of this exercise I choosed to use another base docker image and solved some problems with app (like uncommenting 'WORKDIR' statement, added 'RUN npm install' step, and corrected 'CMD' statement. Also I changed http-server dependency in the package.json and fixed encoding in the index.js. And checked that now our application is working.<br>
+In first part of this exercise I choosed to use another base docker image and solved some problems with app (like uncommenting 'WORKDIR' statement, added 'RUN npm install' step, and corrected 'CMD' statement in the Dockerfile. Also I changed http-server dependency in the package.json and fixed encoding in the index.js) and checked that now our application is working.<br>
 In second part I added ingress service (separated nginx container), created a docker virtual network, atached both containers to it, and fixed problem with names resolving in the docker virtaul net.
 As last point, I used docker-compose to reduce manual work a little bit.<br>
-I didn't tryied to add certbot image or use other ssl certificates, because I have no correct domain name, so result can be not clear. But, of course, it's possible and not too hard.<br>
+I didn't tryied to add certbot image/container or use other ssl certificates, because I have no correct domain name, so result can be not clear. But, of course, it's possible and not too hard.<br>
 
  # Exercise 2
 
