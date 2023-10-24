@@ -90,6 +90,167 @@ P. S. Te correct Dockerfile (and other files used in this task) are in the this 
 - Ex1/part2/compose/app/
 
  # Exercise 2
+I'm starting with new minikube local installation. I'm not too expirienced with minikube speciefic, so got problems mostly with minikube.<br>
+At first I would like to say, that making deploy manifests not only manual job. Most kubernetes distribs can generate minimalistic manifests by itself (like minikube, kube-spray, opensift, etc).<br>
+And, there is a great articale about deploying statefull application into kubernetes from official [documentation](https://kubernetes.io/docs/tutorials/stateful-application/mysql-wordpress-persistent-volume/).<br>
+But it's not interesting to copy all from there, so I asked my friend to made a simple python web application that will create some files and store them on a PV.<br>
+1. Application<br>
+This is simple python web application that have only one button and when it being pressed the application will create a file with time stamp name. We will store it on PV and will check that recreating application POD not affects to stored data.<br>
+The application source code (as good as dependency file, web page template and Dockerfile) can be viewied in this repo: Ex2/src<br>
+Let's build our application. It's can be tricky on my environment, but anyway I can just push it to dockerhub and set container path at the deploy manifest.<br>
+First, ensure you're in the context of your Minikube cluster:<br>
+`kubectl config use-context minikube`<br>
+Next, configure my shell to use Minikube's Docker daemon:<br>
+`eval $(minikube docker-env)`<br>
+And build our application image:<br>
+`docker build -t web-test-app:latest .`<br>
+Now, my application image is ready and I can use it from minikube just by image name in deploy manifest.<br>
+To be sure that my application working as expected, at first I will run it just in Docker (I need to build it one more time, because if it build in minikube docker env I can't reach it via browser):<br>
+`docker build -t web-test-app:latest .`<br>
+`sudo docker run -d --rm --name web-test-app -p 16000:5000 web-test-app`<br>
+Looks like it working:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/85f90598-39b2-4f89-a92e-ffcd2ab0c312)
+Let's check that it creates files as expected - it should write files to the /data path. Of course in docker we have no this path so we need to create it (I will attach a screenshot to be more clear):<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/1b4371e2-7cba-4418-b2b7-a017205a090f)
+Ok, now I'm sure that I have a web application that uses filesystem to store data.<br>
 
+2. Minikube<br>
+While I have clean install of minikube I need to enable ingress plugin:<br>
+`minikube addons enable ingress`<br>
+a) Deployment<br>
+I created a draft of deployment manifest by follow command:<br>
+`kubectl create deployment web-test-app-deployment --image=web-test-app:latest --port=5000`<br>
+It will not work as minimum because I need to set 'imagePullPolicy: Never' due my environment, but I don't found the way how to do it with 'kubectl create deployment'. But it generated a draft that I needed (of I can just take it from any other deployment example).<br>
+I have deleted from the generated manifest most of KV in the metadata stanza, spec.template.metadata.creationTimestamp, added to spec.template.spec.containers 'imagePullPolicy: Never', changed spec.selector.matchLabels.app to 'web-test-app' as well as spec.template.metadata.labels.app and removed all after spec.template.spec.containers.ports because all generated parameters are optional (we can keep them if we wish).<br>
+So, my draft in correct moment looks like:<br>
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-test-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-test-app
+  template:
+    metadata:
+      labels:
+        app: web-test-app
+    spec:
+      containers:
+      - name: web-test-app
+        image: web-test-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+```
+Now I just need to add our volume to deployment and it's ready (to do that I just was looking examples in official kubernetes documentation):<br>
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-test-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-test-app
+  template:
+    metadata:
+      labels:
+        app: web-test-app
+    spec:
+      containers:
+      - name: web-test-app
+        image: web-test-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: web-test-app-pvc
+```
+b) PVC<br>
+I have only one StorageClass out from the box. It called 'standard' and I will use it. But I also used NFS and [SeaWeed FS](https://github.com/seaweedfs/seaweedfs) for storing persistand data in Openshift.<br>
+So, create PersistentVolumeClaim manifest will be not too difficult:<br>
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: web-test-app-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+```
+c) Service<br>
+The draft also can be generated by kubectl:<br>
+`kubectl expose deployment web-test-app-deployment --type=NodePort --port=80`<br>
+But in this case I will take it from examples and modify for my application:
+```
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-test-app-service
+spec:
+  selector:
+    app: web-test-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: NodePort
+```
+d) Ingress<br>
+Actually, I also get it from official [documentation](https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/service/networking/minimal-ingress.yaml
+).<br> 
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-test-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: web-test-app.localkube
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-test-app-service
+            port:
+              number: 80
+```
+3. Checking<br>
+Let's deploy our entityes to the kube cluster (it's possible to make one big .yaml with all this stuff, but I think for this exercise will be better to have separated files):<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/9f6fb562-3a5b-42c2-9f69-0a0007c20b8b)<br>
+For some reasons (don't want to use IP without name, and would like to look smarter) I added follow record to my '/etc/hosts' file:<br>
+`192.168.49.2 web-test-app.localkube`<br>
+And after deploynd I should can open our application by hostname. It's so:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/2b8303d5-e2d7-4320-8c24-191c6c6fa46b)<br>
+There are no certificate, but cluster listen https scheme too anyway.<br>
+Now, let's look to persistant storage:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/167528a9-dfe5-4a54-a1da-9e393b0c9f8d)<br>
+Now we have path where our files should stored persistantly: /tmp/hostpath-provisioner/default/web-test-app-pvc<br>
+Let's connect to minikube via ssh and check that files are stored as expected:<br>
+`minikube ssh`<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/3921d0e4-6a34-45c0-8258-950353fe3b8d)<br>
+Great! The last one thing that we need to check that files will not deleted after POD restart/recreate.<br>
+And, yes, it works:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/e65b1447-2ad4-463c-81ad-db1fccf64c87)<br>
+
+Conclusion:<br>
+I can't say that I'm such expirienced Kubernetes user, but there are many possibilities to get required manifests of drafts for the helm charts, so I don't think that deploying of simple application to the kubernetes is too hard. Of course, Kubernetes not only about deploying applications. It's about scalability, it's about building images, it's about etcd and many-many more. But I hope, that I finished a program 'minimum' successfully. 
 
 
