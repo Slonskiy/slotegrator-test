@@ -93,6 +93,228 @@ P. S. Корректный Dockerfile (и остальные файлы испо
 
 
  # Exercise 2
+Я буду использовать minikube на моей рабочей станции. У меня не слишком много опыта с minikube, так что большая часть сложностей возникших с этим заданием были с minikube.<br>
+В начале я хочу заметить что написание манифестов не только ручная работа. Большая часть дистрибютивов kubernetes может генерировать простые манифесты самостоятельно.<br>
+И в рамках этой задачи я хочу обратить внимание на [статью](https://kubernetes.io/docs/tutorials/stateful-application/mysql-wordpress-persistent-volume/) из официальной документации kubernetes где разобран описываемый случай.<br>
+Но не интересно просто скопировать все оттуда, поэтому я попосил друга написать простое приложение на питоне (оно настолько простое, что я и сам мог бы, но потратил бы ощутимо больше времени) которое будет создавать файлы и хранить их на PV.<br>
+1. Application<br>
+Это простое веб приложение на питоне на странице которого есть только одна кнопка, при нажатии на которую приложени будет создавать файл с таймштампом в имени. Мы будем хранить эти файлы на PV и проверить что пеерсоздание POD'a приложения не влияет на хранимые файлы.<br> Исходный код приложения (так же как файл зависимостей, темплейт страницы и Dockerfile) может быть найден в этом репо: Ex2/src<br>
+Давайте соберем наше приложение. С этим могут быть сложности в моем конкретном окружениии, но я всегда могу просто собрать приложение и выложить на dockerhub и прописать в манифесте брать образ с докерхаба.<br>
+Для начала давайте убедимся что я нахожусь в контексте кластера minicube:<br>
+`kubectl config use-context minikube`<br>
+Далее, я конфигурую окружение моей CLI для использования сервиса докера миникуба:<br>
+`eval $(minikube docker-env)`<br>
+И соберем образ нашего приложения:<br>
+`docker build -t web-test-app:latest .`<br>
+Теперь образ моего приложения готов и я могу использовать его из minikube просто по имени образа в манифесте деплоя.<br>
+Что бы быть уверенным что мое приложения работает как ожидается, для начала я запущу его просто в докере (пришлось собрать его еще раз в моем обычном окружении, т. к. иначе оно будет будет недоступно из браузера, из-за окружения minikube):<br>
+`docker build -t web-test-app:latest .`<br>
+`sudo docker run -d --rm --name web-test-app -p 16000:5000 web-test-app`<br>
+Похоже приложение работает:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/85f90598-39b2-4f89-a92e-ffcd2ab0c312)
+Давайте проверим что оно создает файлы как ожидается - приложение должно присать файлы в папку /data. Конечно в образе приложения этой папки нет, поэтому я просто создам ее руками сам (я приложу скриншот для того что бы было понятнее):<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/1b4371e2-7cba-4418-b2b7-a017205a090f)
+Хорошо, теперь я уверен что у меня есть веб приложение которые использует файловую систему для хранения своих данных.<br>
 
+2. Minikube<br>
+Т. к. у меня чистая инсталяция minikube, мне понадобиться включит ingress плагин:<br>
+`minikube addons enable ingress`<br>
+a) Deployment<br>
+Я создал черновик манифеста деплоймента следующей командой:<br>
+`kubectl create deployment web-test-app-deployment --image=web-test-app:latest --port=5000`<br>
+Задеплоится оно не сможет, как минимум потому что мне необходимо установить 'imagePullPolicy: Never' в манифестве, что специфично для моего окружения, но я не нашел как это сделать с помощью 'kubectl create deployment'. Но данная команда сгенерила черновик деплоя который мне нужен (или я мог бы взять его из любого другого примера деплоя).<br>
+Я удалил из сгенеренного манифеста большую часть записей из блока metadata, spec.template.metadata.creationTimestamp, добавил в spec.template.spec.containers 'imagePullPolicy: Never', изменил значение spec.selector.matchLabels.app на 'web-test-app' так же как значение spec.template.metadata.labels.app и удалил все после spec.template.spec.containers.ports потому что все эти записи опциональны (или наприме описывают текущее состояние объекта что в манифесте деплоя не нужно, но при желании их частично можно оставить).<br>
+Так что, мой черновик сейчас выглядит вот так:<br>
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-test-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-test-app
+  template:
+    metadata:
+      labels:
+        app: web-test-app
+    spec:
+      containers:
+      - name: web-test-app
+        image: web-test-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+```
+Теперь мне нужно добавить описание нашего волума в деплой и это не сложно (для того что бы сделать это я смотрел в примеры в официальной документации кубернейтеса):<br>
+```
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-test-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: web-test-app
+  template:
+    metadata:
+      labels:
+        app: web-test-app
+    spec:
+      containers:
+      - name: web-test-app
+        image: web-test-app:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 5000
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: web-test-app-pvc
+```
+b) PVC<br>
+У меня из коробки есть только один StorageClass. Он называется 'standard' и я буду использовать его. Но раннее для организации Persistant Storage в Openshift у меня был опыт использования NFS и [SeaWeed FS](https://github.com/seaweedfs/seaweedfs).<br>
+Итак, создание манифеста PersistentVolumeClaim должно быть не слишком сложным:<br>
+```
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: web-test-app-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 1Gi
+```
+c) Service<br>
+Черновик так же может быть сгенерирован с помощью kubectl:<br>
+`kubectl expose deployment web-test-app-deployment --type=NodePort --port=80`<br>
+Но в этом случае я возьму его и примеров и изменю под мое приложение:<br>
+```
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-test-app-service
+spec:
+  selector:
+    app: web-test-app
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5000
+  type: NodePort
+```
+d) Ingress<br>
+Честно говоря я взял его из официальной [документации](https://raw.githubusercontent.com/kubernetes/website/main/content/en/examples/service/networking/minimal-ingress.yaml).<br> 
+```
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-test-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+  - host: web-test-app.localkube
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-test-app-service
+            port:
+              number: 80
+```
+3. Checking<br>
+Давайте задеплоим наши сущности в minikube кластер (возможно сделать один большой yaml в котором будут все наши манифесты, но я думаю для этого упражнения будет лучше иметь раздельные файлы:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/9f6fb562-3a5b-42c2-9f69-0a0007c20b8b)<br>
+По некоторым причинам (я не хочу использовать IP адресс без имени, и я просто хочу выглядеть солидней) я добавил следующую запись в мой '/etc/hosts':<br>
+`192.168.49.2 web-test-app.localkube`<br>
+И после деплоя приложения я должен иметь возможность открыть мое приложение адресу имени хоста. И это действительно так:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/2b8303d5-e2d7-4320-8c24-191c6c6fa46b)<br>
+Сетификата нет, но кластер все равно слушает https схему.<br>
+Теперь давайте посмотрим на persistant storage:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/167528a9-dfe5-4a54-a1da-9e393b0c9f8d)<br>
+Теперь у нас есть путь по которому должны храниться файлы которое создает наше приложение: /tmp/hostpath-provisioner/default/web-test-app-pvc<br>
+Давайте соединимся с minikube по ssh и проверим что файлы действительно хранятся как ожидается:<br>
+`minikube ssh`<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/3921d0e4-6a34-45c0-8258-950353fe3b8d)<br>
+Отлично! Теперь осталось проверить что файлы не пропадут после пересоздания/рестата POD'а с приложением.<br>
+Да, так и есть:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/e65b1447-2ad4-463c-81ad-db1fccf64c87)<br>
+
+Заключение:<br>
+Я не могу назвать себя очень опытным пользователем кубернейтеса, но есть достаточно возможностей получить требуемые черновики/примеры манифестов или хелм чартов, так что я не думаю что деплой простого приложения в кубернейтес это слишком сложно. Конечно, кубернейтес это не только про деплой приложений. Это про масштабируемость, это про сборку образов, про etcd и много-много всего. Но я надеюсь что я завершил программу "минимум" успешно.<br>
+
+# Exercise 3
+Setup HPA for our application.<br>
+Честно говоря, я раньше не делал ничего похожего, так что я просто прочел документацию ([эту](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/) и [эту](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/#support-for-multiple-metrics)) и как и в предыдущих случаях драфт манифеста для HPA может быть сгенерирован с помощью kubectl.<br>
+`kubectl autoscale deployment web-test-app-deployment -n default --cpu-percent=20 --min=1 --max=3`<br>
+В результате у меня есть черновик для моего HPA:<br>
+```
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-test-app-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-test-app-deployment
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - resource:
+      name: cpu
+      target:
+        averageUtilization: 20
+        type: Utilization
+    type: Resource
+```
+Я поменял некоторые параметры HPA для моего приложения и в итоге получил следуоющее:<br>
+```
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-test-app-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-test-app-deployment
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: ContainerResource
+    containerResource:
+      name: cpu
+      container: web-test-app
+      target:
+        type: Utilization
+        averageUtilization: 5
+  - type: ContainerResource
+    containerResource:
+      name: memory
+      container: web-test-app
+      target:
+        type: AverageValue
+        averageValue: 15Mi
+```
+Я применил мой HPA манифест к моему Kubernetes. И теперь время проверить как он работает.<br>
+Мое приложение потребляет поядка 20 мегабайт памяти и совсем чуть-чуть CPU (когда я смотрю на потребляемые ресурсы с помощью 'kubectl get hpa web-test-app-hpa --watch' для потребления CPU выводится статус '<unknown>' и небольшие числа в дашборде кластера, поэтому я считаю что мое потребление CPU моим приложением пренебрежимо мало). Я не смог быстро придумать как заставить приложение активней потреблять ресурсы потому что оно очень простое. Я пробовал создать нагрузку следующей командой 'kubectl run -i --tty load-generator --rm --image=busybox:1.28 --restart=Never -- /bin/sh -c "while sleep 0.01; do wget -q -O- http://web-test-app-service ; done"', но эта нагрузка чуть-чуть увеличивает потребление памяти POD'ом, но не сказывается существенно на потреблении CPU. Поэтому я просто установил цель по памяти для HPA (изначально было CPU 20%/RAM 30Mb) на 15 Мб. Применил новую версию манифеста и я могу что HPA работает корректно - теперь у нас три реплики:<br>
+![image](https://github.com/Slonskiy/slotegrator-test/assets/101737363/c07bf866-5796-4143-819e-671fba801f85)
+
+Заключение:<br>
+Это был мой первый опыт Horizontal Pod Autoscaler, я попробовал только базовые функции (например у меня был вариант манифеста который срабатывает по сумманому потреблению подов, а не конретного контейнера), но это было не так сложно и теперь я знаю некоторые примеры как HPA может быть сконфигурирован.
 
 
