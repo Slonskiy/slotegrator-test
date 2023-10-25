@@ -92,7 +92,7 @@ P. S. Te correct Dockerfile (and other files used in this task) are in the this 
  # Exercise 2
 
 I'm starting with new minikube local installation. I'm not too expirienced with minikube speciefic, so got problems mostly with minikube.<br>
-At first I would like to say, that making deploy manifests not only manual job. Most kubernetes distribs can generate minimalistic manifests by itself (like minikube, kube-spray, opensift, etc).<br>
+At first I would like to say, that making deploy manifests not only manual job. Most kubernetes distribs can generate minimalistic manifests by itself (like minikube, kubespray, opensift, etc).<br>
 And, there is a great articale about deploying statefull application into kubernetes from official [documentation](https://kubernetes.io/docs/tutorials/stateful-application/mysql-wordpress-persistent-volume/).<br>
 But it's not interesting to copy all from there, so I asked my friend to made a simple python web application that will create some files and store them on a PV.<br>
 1. Application<br>
