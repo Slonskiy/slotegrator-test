@@ -11,18 +11,9 @@ spec:
   minReplicas: 1
   maxReplicas: 3
   metrics:
-  - type: ContainerResource
-    containerResource:
+  - resource:
       name: cpu
-      container: web-test-app
       target:
+        averageUtilization: 20
         type: Utilization
-        averageUtilization: 5
-  - type: ContainerResource
-    containerResource:
-      name: memory
-      container: web-test-app
-      target:
-        type: AverageValue
-        averageValue: 15Mi
-
+    type: Resource
